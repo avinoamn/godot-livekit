@@ -1,0 +1,14 @@
+# LiveKit for local development only (npm run livekit). Production config lives in deploy/.
+port: 7880
+rtc:
+  tcp_port: 7881 # fallback when UDP is blocked
+  udp_port: 7882 # all UDP media on one port
+  use_external_ip: false
+  # The game and the Docker container share this machine, and Docker
+  # forwards the ports above to localhost, so advertise 127.0.0.1.
+  node_ip: 127.0.0.1
+keys:
+  # Development key pair; matches .env.example. Never use it anywhere else.
+  devkey: dev-only-livekit-secret-0123456789abcdef
+logging:
+  level: info

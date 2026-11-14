@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 PLATFORM=""
 ARCH=""
 SCONS_FLAGS=""
-LIVEKIT_VERSION="0.3.1"
+LIVEKIT_VERSION="1.13.1"
 GODOT_CPP_VERSION="godot-4.5-stable"
 FRAMETAP_VERSION="0.1.3"
 LIVEKIT_JS_VERSION="2.22.3"
@@ -67,9 +67,10 @@ show_usage() {
 setup_linux() {
     PLATFORM="linux"
     ARCH="x86_64"
-    SCONS_FLAGS="platform=linux arch=x86_64"
-    LIVEKIT_ARCHIVE="livekit-sdk-linux-x64-${LIVEKIT_VERSION}.tar.gz"
-    LIVEKIT_URL="https://github.com/krazyjakee/client-sdk-cpp/releases/download/v${LIVEKIT_VERSION}/${LIVEKIT_ARCHIVE}"
+    SCONS_FLAGS="platform=linux arch=x86_64 screen_capture=no"
+    SKIP_FRAMETAP=true
+    LIVEKIT_ARCHIVE="livekit-sdk-ubuntu-22.04-x64-${LIVEKIT_VERSION}.tar.gz"
+    LIVEKIT_URL="https://github.com/livekit/client-sdk-cpp/releases/download/v${LIVEKIT_VERSION}/${LIVEKIT_ARCHIVE}"
     echo -e "${BLUE}=== Godot-LiveKit Local Build Script (Linux) ===${NC}"
 }
 
@@ -89,16 +90,17 @@ setup_macos() {
     local sdk_arch="arm64"
     [ "$ARCH" = "x86_64" ] && sdk_arch="x64"
     LIVEKIT_ARCHIVE="livekit-sdk-macos-${sdk_arch}-${LIVEKIT_VERSION}.tar.gz"
-    LIVEKIT_URL="https://github.com/krazyjakee/client-sdk-cpp/releases/download/v${LIVEKIT_VERSION}/${LIVEKIT_ARCHIVE}"
+    LIVEKIT_URL="https://github.com/livekit/client-sdk-cpp/releases/download/v${LIVEKIT_VERSION}/${LIVEKIT_ARCHIVE}"
     echo -e "${BLUE}=== Godot-LiveKit Local Build Script (macOS ${ARCH}) ===${NC}"
 }
 
 setup_windows() {
     PLATFORM="windows"
     ARCH="x86_64"
-    SCONS_FLAGS="platform=windows arch=x86_64"
+    SCONS_FLAGS="platform=windows arch=x86_64 screen_capture=no"
+    SKIP_FRAMETAP=true
     LIVEKIT_ARCHIVE="livekit-sdk-windows-x64-${LIVEKIT_VERSION}.zip"
-    LIVEKIT_URL="https://github.com/krazyjakee/client-sdk-cpp/releases/download/v${LIVEKIT_VERSION}/${LIVEKIT_ARCHIVE}"
+    LIVEKIT_URL="https://github.com/livekit/client-sdk-cpp/releases/download/v${LIVEKIT_VERSION}/${LIVEKIT_ARCHIVE}"
     echo -e "${BLUE}=== Godot-LiveKit Local Build Script (Windows Native) ===${NC}"
 }
 
@@ -107,7 +109,7 @@ setup_android() {
     ARCH="arm64"
     SCONS_FLAGS="platform=android arch=arm64 screen_capture=no"
     LIVEKIT_ARCHIVE="livekit-sdk-android-arm64-${LIVEKIT_VERSION}.tar.gz"
-    LIVEKIT_URL="https://github.com/krazyjakee/client-sdk-cpp/releases/download/v${LIVEKIT_VERSION}/${LIVEKIT_ARCHIVE}"
+    LIVEKIT_URL="https://github.com/livekit/client-sdk-cpp/releases/download/v${LIVEKIT_VERSION}/${LIVEKIT_ARCHIVE}"
     SKIP_FRAMETAP=true
     echo -e "${BLUE}=== Godot-LiveKit Local Build Script (Android arm64) ===${NC}"
 }

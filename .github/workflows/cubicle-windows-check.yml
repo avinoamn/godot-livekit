@@ -1,0 +1,85 @@
+name: Cubicle Windows check
+
+# Builds the extension on Windows and runs Cubicle's check clients (cubicle-check/) against a local
+# livekit-server: two clients for 20 s, then leaving and rejoining. Every client must exit with 0.
+on:
+  push:
+    branches: [cubicle-windows-check, cubicle-windows-baseline]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LIVEKIT_SERVER_VERSION: 1.13.11
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 50
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+      - run: pip install scons
+      - name: Build
+        run: ./build.sh windows
+      - name: Install into the check project
+        run: |
+          rm -f addons/godot-livekit/bin/*.lib addons/godot-livekit/bin/*.exp
+          mkdir -p cubicle-check/game/addons
+          cp -r addons/godot-livekit cubicle-check/game/addons/
+          ls -la cubicle-check/game/addons/godot-livekit/bin
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Node packages
+        working-directory: cubicle-check
+        run: npm install --no-audit --no-fund
+      - name: Godot
+        run: |
+          version=$(tr -d '[:space:]' < cubicle-check/.godot-version)
+          base="https://github.com/godotengine/godot-builds/releases/download/$version"
+          file="Godot_v${version}_win64.exe.zip"
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "$base/SHA512-SUMS.txt"
+          curl -fsSLO "$base/$file"
+          grep " $file\$" SHA512-SUMS.txt | sha512sum -c -
+          7z x -y "$file" -o"$RUNNER_TEMP/godot" > /dev/null
+          echo "GODOT=$(ls "$RUNNER_TEMP"/godot/*_console.exe)" >> "$GITHUB_ENV"
+      - name: LiveKit server
+        working-directory: cubicle-check
+        run: |
+          curl -fsSLO "https://github.com/livekit/livekit/releases/download/v${LIVEKIT_SERVER_VERSION}/livekit_${LIVEKIT_SERVER_VERSION}_windows_amd64.zip"
+          7z x -y "livekit_${LIVEKIT_SERVER_VERSION}_windows_amd64.zip" -o"$RUNNER_TEMP/lk" > /dev/null
+          "$RUNNER_TEMP/lk/livekit-server.exe" --config dev/livekit.yaml > "$RUNNER_TEMP/livekit.log" 2>&1 &
+      - name: Import
+        working-directory: cubicle-check
+        run: '"$GODOT" --headless --path game --import > /dev/null 2>&1 || true'
+      - name: Two clients, 20 s, audio from a worker thread
+        working-directory: cubicle-check
+        timeout-minutes: 3
+        run: |
+          set -o pipefail
+          node tools/livekit-check/run.mjs --clients=2 --seconds=20 --shutdown=disconnect --thread | tee "$RUNNER_TEMP/run1.log" | grep -E 'exited|,second,|subscribed|timed out|ERROR' | cut -c1-200
+          ! grep -E 'exited with [^0]' "$RUNNER_TEMP/run1.log"
+      - name: Two clients, leave and rejoin
+        working-directory: cubicle-check
+        timeout-minutes: 3
+        run: |
+          set -o pipefail
+          node tools/livekit-check/run.mjs --clients=2 --seconds=20 --shutdown=none --leave-at=6 --rejoin | tee "$RUNNER_TEMP/run2.log" | grep -E 'exited|,second,|subscribed|rejoin|timed out|ERROR' | cut -c1-200
+          ! grep -E 'exited with [^0]' "$RUNNER_TEMP/run2.log"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: logs
+          path: |
+            ${{ runner.temp }}/*.log
+            cubicle-check/build/livekit-check

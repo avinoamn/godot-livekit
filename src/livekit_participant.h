@@ -36,6 +36,9 @@ public:
 protected:
     static void _bind_methods();
     livekit::Participant *participant_ = nullptr;
+    // Copied when bound: the SDK frees a participant when it leaves or the room drops, while
+    // queued events still hand this wrapper to GDScript, which reads its identity.
+    String identity_;
 
 public:
     LiveKitParticipant();

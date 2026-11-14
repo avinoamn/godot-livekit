@@ -1,0 +1,10 @@
+; A minimal project for the check clients: the extension goes in addons/godot-livekit.
+config_version=5
+
+[application]
+
+config/name="godot-livekit check"
+
+[audio]
+
+driver/enable_input=true
