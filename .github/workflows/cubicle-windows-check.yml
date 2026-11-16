@@ -1,0 +1,106 @@
+name: Cubicle Windows check
+
+# Builds the extension on Windows and runs Cubicle's check clients (cubicle-check/) against a local
+# livekit-server: two clients for 20 s, leaving and rejoining, and one client leaving while the other stays
+# (which must still name it). Every client must exit with 0. Then the build is uploaded as the artifact
+# godot-livekit-windows, which Cubicle's scripts/native-local.sh publishes when its machine has no MSVC.
+on:
+  push:
+    branches: [cubicle-windows-check]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LIVEKIT_SERVER_VERSION: 1.13.11
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 50
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+      - run: pip install scons
+      - name: Build
+        run: ./build.sh windows
+      - name: Install into the check project
+        run: |
+          rm -f addons/godot-livekit/bin/*.lib addons/godot-livekit/bin/*.exp
+          mkdir -p cubicle-check/game/addons
+          cp -r addons/godot-livekit cubicle-check/game/addons/
+          ls -la cubicle-check/game/addons/godot-livekit/bin
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Node packages
+        working-directory: cubicle-check
+        run: npm install --no-audit --no-fund
+      - name: Godot
+        run: |
+          version=$(tr -d '[:space:]' < cubicle-check/.godot-version)
+          base="https://github.com/godotengine/godot-builds/releases/download/$version"
+          file="Godot_v${version}_win64.exe.zip"
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "$base/SHA512-SUMS.txt"
+          curl -fsSLO "$base/$file"
+          grep " $file\$" SHA512-SUMS.txt | sha512sum -c -
+          7z x -y "$file" -o"$RUNNER_TEMP/godot" > /dev/null
+          echo "GODOT=$(ls "$RUNNER_TEMP"/godot/*_console.exe)" >> "$GITHUB_ENV"
+      - name: LiveKit server
+        working-directory: cubicle-check
+        run: |
+          curl -fsSLO "https://github.com/livekit/livekit/releases/download/v${LIVEKIT_SERVER_VERSION}/livekit_${LIVEKIT_SERVER_VERSION}_windows_amd64.zip"
+          7z x -y "livekit_${LIVEKIT_SERVER_VERSION}_windows_amd64.zip" -o"$RUNNER_TEMP/lk" > /dev/null
+          "$RUNNER_TEMP/lk/livekit-server.exe" --config dev/livekit.yaml > "$RUNNER_TEMP/livekit.log" 2>&1 &
+      - name: Import
+        working-directory: cubicle-check
+        run: '"$GODOT" --headless --path game --import > /dev/null 2>&1 || true'
+      - name: Two clients, 20 s, audio from a worker thread
+        working-directory: cubicle-check
+        timeout-minutes: 3
+        run: |
+          set -o pipefail
+          node tools/livekit-check/run.mjs --clients=2 --seconds=20 --shutdown=disconnect --thread | tee "$RUNNER_TEMP/run1.log" | grep -E 'exited|,second,|subscribed|timed out|ERROR' | cut -c1-200
+          ! grep -E 'exited with [^0]' "$RUNNER_TEMP/run1.log"
+      - name: Two clients, leave and rejoin
+        working-directory: cubicle-check
+        timeout-minutes: 3
+        run: |
+          set -o pipefail
+          node tools/livekit-check/run.mjs --clients=2 --seconds=20 --shutdown=none --leave-at=6 --rejoin | tee "$RUNNER_TEMP/run2.log" | grep -E 'exited|,second,|subscribed|rejoin|timed out|ERROR' | cut -c1-200
+          ! grep -E 'exited with [^0]' "$RUNNER_TEMP/run2.log"
+      - name: One client leaves, the other stays
+        working-directory: cubicle-check
+        timeout-minutes: 3
+        run: |
+          set -o pipefail
+          node tools/livekit-check/run.mjs --clients=2 --seconds=14 --shutdown=disconnect --leave-at=6 --leaver=1 | tee "$RUNNER_TEMP/run3.log" | grep -E 'exited|subscribed|gone|identity later|left|timed out|ERROR' | cut -c1-200
+          ! grep -E 'exited with [^0]' "$RUNNER_TEMP/run3.log"
+          # Client 0 must name the leaver every time: on both tracks unsubscribing, on its leaving
+          # and a second later, after the SDK has freed it.
+          log=build/livekit-check/c0.csv
+          test "$(grep -c '^[0-9.]*,unsubscribed,c1,' "$log")" -ge 2
+          grep -q '^[0-9.]*,gone,c1$' "$log"
+          grep -q '^[0-9.]*,identity later,c1$' "$log"
+          ! grep -E '^[0-9.]*,(unsubscribed|gone|identity later),(,|$)' "$log"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: logs
+          path: |
+            ${{ runner.temp }}/*.log
+            cubicle-check/build/livekit-check
+      - uses: actions/upload-artifact@v7
+        with:
+          name: godot-livekit-windows
+          path: addons/godot-livekit/
+          retention-days: 7
